@@ -1,12 +1,6 @@
 import torch
 
 
-# using glorot initialization
-def init_weights(m):
-    if isinstance(m, torch.nn.Conv1d):
-        torch.nn.init.xavier_uniform_(m.weight.data)
-
-
 class CNN(torch.nn.Module):
     def __init__(
         self,
@@ -67,12 +61,3 @@ class CNN(torch.nn.Module):
         out = self.global_pool(inwav).squeeze()
         out = self.linear(out)
         return out.squeeze()
-
-
-CnnModel = CNN(
-    channels=[[64], [64] * 2, [128] * 2, [256] * 3, [512] * 2],
-    conv_kernels=[80, 3, 3, 3, 3],
-    conv_strides=[4, 1, 1, 1, 1],
-    conv_padding=[38, 1, 1, 1, 1],
-    pool_padding=[0, 0, 0, 2],
-)

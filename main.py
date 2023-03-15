@@ -1,6 +1,94 @@
+import os
+import time
+
 import pandas as pd
+import torch
+from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+from models import CNN
 from preprocessor import SpectrogramDataset
+
+
+def test(model, data_loader, verbose=False):
+    """Measures the accuracy of a model on a data set."""
+    # Make sure the model is in evaluation mode.
+    model.eval()
+    correct = 0
+    #     print('----- Model Evaluation -----')
+    # We do not need to maintain intermediate activations while testing.
+    with torch.no_grad():
+        # Loop over test data.
+        for features, target in tqdm(
+            data_loader, total=len(data_loader.batch_sampler), desc="Testing"
+        ):
+            # Forward pass.
+            output = model(features.to(device))
+            # Get the label corresponding to the highest predicted probability.
+            pred = output.argmax(dim=1, keepdim=True)
+            # Count number of correct predictions.
+            correct += pred.cpu().eq(target.view_as(pred)).sum().item()
+    # Print test accuracy.
+    percent = 100.0 * correct / len(data_loader.sampler)
+    if verbose:
+        print(f"Test accuracy: {correct} / {len(data_loader.sampler)} ({percent:.0f}%)")
+    return percent
+
+
+# using glorot initialization
+def init_weights(m):
+    if isinstance(m, torch.nn.Conv1d):
+        torch.nn.init.xavier_uniform_(m.weight.data)
+
+
+def train(model, criterion, data_loader, test_loader, optimizer, num_epochs):
+    """Simple training loop for a PyTorch model."""
+
+    # Move model to the device (CPU or GPU).
+    model.to(device)
+
+    accs = []
+    # Exponential moving average of the loss.
+    ema_loss = None
+
+    #     print('----- Training Loop -----')
+    # Loop over epochs.
+    for epoch in range(num_epochs):
+        tick = time.time()
+        model.train()
+        # Loop over data.
+        for batch_idx, (features, target) in tqdm(
+            enumerate(data_loader),
+            total=len(data_loader.batch_sampler),
+            desc="training",
+        ):
+            # Forward pass.
+            output = model(features.to(device))
+            loss = criterion(output.to(device), target.to(device))
+            # Backward pass.
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            # NOTE: It is important to call .item() on the loss before summing.
+            if ema_loss is None:
+                ema_loss = loss.item()
+            else:
+                ema_loss += (loss.item() - ema_loss) * 0.01
+            tock = time.time()
+        acc = test(model, test_loader, verbose=True)
+        accs.append(acc)
+        # Print out progress the end of epoch.
+        print(
+            "Epoch: {} \tLoss: {:.6f} \t Time taken: {:.6f} seconds".format(
+                epoch + 1, ema_loss, tock - tick
+            ),
+        )
+        torch.save(model.state_dict(), f"model_{epoch}.ckpt")
+        print("Model Saved!")
+        if os.path.isfile(f"model_{epoch - 1}.ckpt"):
+            os.remove(f"model_{epoch - 1}.ckpt")
+    return accs
 
 
 def split_data(audio_df):
@@ -50,3 +138,32 @@ if __name__ == "__main__":
     train_loader, valid_loader, test_loader = build_training_data(
         train, valid, test, 32, 32, 32
     )
+
+    CnnModel = CNN(
+        channels=[[64], [64] * 2, [128] * 2, [256] * 3, [512] * 2],
+        conv_kernels=[80, 3, 3, 3, 3],
+        conv_strides=[4, 1, 1, 1, 1],
+        conv_padding=[38, 1, 1, 1, 1],
+        pool_padding=[0, 0, 0, 2],
+    )
+
+    random_seed = 42
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Device used: {device}")
+
+    print("Num Parameters:", sum([p.numel() for p in CnnModel.parameters()]))
+    CnnModel.apply(init_weights)
+
+    criterion = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(CnnModel.parameters(), weight_decay=1e-4)
+
+    num_epochs = 100
+    accs = train(
+        CnnModel, criterion, train_loader, test_loader, optimizer, num_epochs=num_epochs
+    )
+
+    plt.plot(accs)
+    plt.title("Test Accuracy")
+    plt.xlabel("# Epochs")
+    plt.ylabel("Accuracy (%)")
+    plt.show()
