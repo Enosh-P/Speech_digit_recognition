@@ -16,7 +16,7 @@ def test(model, data_loader, verbose=False):
     # Make sure the model is in evaluation mode.
     model.eval()
     correct = 0
-    #     print('----- Model Evaluation -----')
+    print("----- Model Evaluation -----")
     # We do not need to maintain intermediate activations while testing.
     with torch.no_grad():
         # Loop over test data.
@@ -42,7 +42,7 @@ def init_weights(m):
         torch.nn.init.xavier_uniform_(m.weight.data)
 
 
-def train(model, criterion, data_loader, test_loader, optimizer, num_epochs):
+def train(model, criterion, train_loader, validation_loader, optimizer, num_epochs):
     """Simple training loop for a PyTorch model."""
 
     # Move model to the device (CPU or GPU).
@@ -59,24 +59,26 @@ def train(model, criterion, data_loader, test_loader, optimizer, num_epochs):
         model.train()
         # Loop over data.
         for batch_idx, (features, target) in tqdm(
-            enumerate(data_loader),
-            total=len(data_loader.batch_sampler),
+            enumerate(train_loader),
+            total=len(train_loader.batch_sampler),
             desc="training",
         ):
             # Forward pass.
             output = model(features.to(device))
             loss = criterion(output.to(device), target.to(device))
+
             # Backward pass.
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            # NOTE: It is important to call .item() on the loss before summing.
+
             if ema_loss is None:
                 ema_loss = loss.item()
             else:
                 ema_loss += (loss.item() - ema_loss) * 0.01
-            tock = time.time()
-        acc = test(model, test_loader, verbose=True)
+
+        tock = time.time()
+        acc = test(model, validation_loader, verbose=True)
         accs.append(acc)
         # Print out progress the end of epoch.
         print(
@@ -132,11 +134,11 @@ if __name__ == "__main__":
     sdr_df = pd.read_csv("SDR_metadata.tsv", sep="\t", header=0, index_col="Unnamed: 0")
 
     print("Train Test Split!")
-    train, valid, test = split_data(sdr_df)
+    train_data, valid_data, test_data = split_data(sdr_df)
 
     print("Preparing Data!")
     train_loader, valid_loader, test_loader = build_training_data(
-        train, valid, test, 32, 32, 32
+        train_data, valid_data, test_data, 32, 32, 32
     )
 
     CnnModel = CNN(
@@ -159,11 +161,17 @@ if __name__ == "__main__":
 
     num_epochs = 100
     accs = train(
-        CnnModel, criterion, train_loader, test_loader, optimizer, num_epochs=num_epochs
+        CnnModel,
+        criterion,
+        train_loader,
+        valid_loader,
+        optimizer,
+        num_epochs=num_epochs,
     )
+    acc = test(CnnModel, test_loader, verbose=True)
 
     plt.plot(accs)
-    plt.title("Test Accuracy")
+    plt.title("Validation Accuracy")
     plt.xlabel("# Epochs")
     plt.ylabel("Accuracy (%)")
     plt.show()
