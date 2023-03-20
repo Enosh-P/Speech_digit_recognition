@@ -3,7 +3,6 @@ import librosa.display
 import numpy as np
 from sklearn import preprocessing
 from torch.utils.data import Dataset
-from tqdm import tqdm
 
 SAMPLING_RATE = 8000  # This value is determined by the wav file, DO NOT CHANGE
 
@@ -47,26 +46,21 @@ def get_mel_spectrogram(file_path, sr=SAMPLING_RATE, num_mels=13):
     return extract_melspectrogram(audio_data, sr, num_mels)
 
 
-def downsample_spectrogram(spectrogram, n=15, flatten=True):
+def downsample_spectrogram(spectrogram, n=15):
     """
     Given a spectrogram of an arbitrary length/duration (X ∈ K x T),
     return a downsampled version of the spectrogram v ∈ K * N
     """
-    if not n:
-        return spectrogram
     k, t = spectrogram.shape
-    each_split_size, remaining_size = divmod(t, n)
-    splitted = [
-        spectrogram[
-            :, i * each_split_size : (i + 1) * each_split_size + (i < remaining_size)
-        ]
-        for i in range(n)
+    split_size = t // n
+    split_indices = [i * split_size for i in range(n)] + [t]
+
+    X_splits = [
+        spectrogram[:, split_indices[i] : split_indices[i + 1]] for i in range(n)
     ]
-    splitted_mean_arr = [np.mean(split, axis=1) for split in splitted]
-    image = np.column_stack(splitted_mean_arr)
-    if flatten:
-        return np.reshape(image, (n * k,))
-    return image
+    X_downsampled = np.array([np.mean(split, axis=1) for split in X_splits])
+
+    return X_downsampled.reshape((n * k,))
 
 
 class SpectrogramDataset(Dataset):
