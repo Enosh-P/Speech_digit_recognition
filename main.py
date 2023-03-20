@@ -6,7 +6,6 @@ import torch
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-
 from models import CNN
 from preprocessor import SpectrogramDataset
 
@@ -16,13 +15,14 @@ def test(model, data_loader, verbose=False):
     # Make sure the model is in evaluation mode.
     model.eval()
     correct = 0
-    print("----- Model Evaluation -----")
     # We do not need to maintain intermediate activations while testing.
     with torch.no_grad():
         # Loop over test data.
         for features, target in tqdm(
             data_loader, total=len(data_loader.batch_sampler), desc="Testing"
         ):
+            # Reshape the tensor to have shape [batch_size, input_channels, signal_length]
+            features = features.view(features.shape[0], 1, features.shape[1])
             # Forward pass.
             output = model(features.to(device))
             # Get the label corresponding to the highest predicted probability.
@@ -32,6 +32,7 @@ def test(model, data_loader, verbose=False):
     # Print test accuracy.
     percent = 100.0 * correct / len(data_loader.sampler)
     if verbose:
+        print("----- Model Evaluation -----")
         print(f"Test accuracy: {correct} / {len(data_loader.sampler)} ({percent:.0f}%)")
     return percent
 
@@ -61,8 +62,11 @@ def train(model, criterion, train_loader, validation_loader, optimizer, num_epoc
         for batch_idx, (features, target) in tqdm(
             enumerate(train_loader),
             total=len(train_loader.batch_sampler),
-            desc="training",
+            desc="Training",
         ):
+            # Reshape the tensor to have shape [batch_size, input_channels, signal_length]
+            features = features.view(features.shape[0], 1, features.shape[1])
+
             # Forward pass.
             output = model(features.to(device))
             loss = criterion(output.to(device), target.to(device))
@@ -86,10 +90,10 @@ def train(model, criterion, train_loader, validation_loader, optimizer, num_epoc
                 epoch + 1, ema_loss, tock - tick
             ),
         )
-        torch.save(model.state_dict(), f"model_{epoch}.ckpt")
+        torch.save(model.state_dict(), f"saved_models/model_{epoch}.ckpt")
         print("Model Saved!")
-        if os.path.isfile(f"model_{epoch - 1}.ckpt"):
-            os.remove(f"model_{epoch - 1}.ckpt")
+        if os.path.isfile(f"saved_models/model_{epoch - 1}.ckpt"):
+            os.remove(f"saved_models/model_{epoch - 1}.ckpt")
     return accs
 
 
@@ -111,17 +115,17 @@ def build_training_data(
 ):
     """Covert the audio samples into training data"""
 
-    train_data = SpectrogramDataset(train_df)
+    train_data = SpectrogramDataset(train_df, n=15)
     train_pr = DataLoader(
         train_data, batch_size=train_batch_size, shuffle=True, num_workers=2
     )
 
-    valid_data = SpectrogramDataset(valid_df)
+    valid_data = SpectrogramDataset(valid_df, n=15)
     valid_pr = DataLoader(
         valid_data, batch_size=val_batch_size, shuffle=True, num_workers=2
     )
 
-    test_data = SpectrogramDataset(test_df)
+    test_data = SpectrogramDataset(test_df, n=15)
     test_pr = DataLoader(
         test_data, batch_size=test_batch_size, shuffle=True, num_workers=2
     )
@@ -134,20 +138,14 @@ if __name__ == "__main__":
     sdr_df = pd.read_csv("SDR_metadata.tsv", sep="\t", header=0, index_col="Unnamed: 0")
 
     print("Train Test Split!")
-    train_data, valid_data, test_data = split_data(sdr_df)
+    train_df, valid_df, test_df = split_data(sdr_df)
 
     print("Preparing Data!")
     train_loader, valid_loader, test_loader = build_training_data(
-        train_data, valid_data, test_data, 32, 32, 32
+        train_df, valid_df, test_df, 32, 32, 32
     )
 
-    CnnModel = CNN(
-        channels=[[64], [64] * 2, [128] * 2, [256] * 3, [512] * 2],
-        conv_kernels=[80, 3, 3, 3, 3],
-        conv_strides=[4, 1, 1, 1, 1],
-        conv_padding=[38, 1, 1, 1, 1],
-        pool_padding=[0, 0, 0, 2],
-    )
+    CnnModel = CNN()
 
     random_seed = 42
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

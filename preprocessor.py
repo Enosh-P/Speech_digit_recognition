@@ -80,10 +80,10 @@ class SpectrogramDataset(Dataset):
         self.df = df
         self.data = []
         self.labels = []
-        # n cannot be greater than 25 or less than 1. if n = 0, then padding is not used
+        # n cannot be greater than 25 or less than 1. if n = 0, then pooling is not used
         self.n = min(25, n, 0)
 
-        for index in tqdm(df.index):
+        for index in df.index:
             row = df.loc[index]
             file_path = get_audio_path(row)
             spectrogram = get_mel_spectrogram(file_path)

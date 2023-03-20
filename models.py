@@ -1,63 +1,61 @@
 import torch
+import torch.nn.functional as F
 
 
 class CNN(torch.nn.Module):
     def __init__(
         self,
-        channels,
-        conv_kernels,
-        conv_strides,
-        conv_padding,
-        pool_padding,
         num_classes=10,
     ):
-        assert (
-            len(conv_kernels) == len(channels) == len(conv_strides) == len(conv_padding)
-        )
         super(CNN, self).__init__()
-        # create conv blocks
-        self.conv_blocks = torch.nn.ModuleList()
-        prev_channel = 1
-        for i in range(len(channels)):
-            # add stacked conv layer
-            block = []
-            for j, conv_channel in enumerate(channels[i]):
-                block.append(
-                    torch.nn.Conv1d(
-                        in_channels=prev_channel,
-                        out_channels=conv_channel,
-                        kernel_size=conv_kernels[i],
-                        stride=conv_strides[i],
-                        padding=conv_padding[i],
-                    )
-                )
-                prev_channel = conv_channel
-                # add batch norm layer
-                block.append(torch.nn.BatchNorm1d(prev_channel))
-                # adding ReLU
-                block.append(torch.nn.ReLU())
-            self.conv_blocks.append(torch.nn.Sequential(*block))
+        self.conv1 = torch.nn.Conv1d(1, 64, 5)
+        self.bn1 = torch.nn.BatchNorm1d(64)
+        self.conv2 = torch.nn.Conv1d(64, 64, 5)
+        self.bn2 = torch.nn.BatchNorm1d(64)
+        self.conv3 = torch.nn.Conv1d(64, 64, 5)
+        self.bn3 = torch.nn.BatchNorm1d(64)
+        self.conv4 = torch.nn.Conv1d(64, 64, 5)
+        self.bn4 = torch.nn.BatchNorm1d(64)
+        self.conv5 = torch.nn.Conv1d(64, 128, 3)
+        self.bn5 = torch.nn.BatchNorm1d(128)
+        self.conv6 = torch.nn.Conv1d(128, 128, 3)
+        self.bn6 = torch.nn.BatchNorm1d(128)
+        self.conv7 = torch.nn.Conv1d(128, 128, 3)
+        self.bn7 = torch.nn.BatchNorm1d(128)
+        self.conv8 = torch.nn.Conv1d(128, 128, 3)
+        self.bn8 = torch.nn.BatchNorm1d(128)
+        self.conv9 = torch.nn.Conv1d(128, 256, 3)
+        self.bn9 = torch.nn.BatchNorm1d(256)
+        self.conv10 = torch.nn.Conv1d(256, 256, 3)
+        self.bn10 = torch.nn.BatchNorm1d(256)
+        self.conv11 = torch.nn.Conv1d(256, 256, 2)
+        self.bn11 = torch.nn.BatchNorm1d(256)
+        self.conv12 = torch.nn.Conv1d(256, 256, 2)
+        self.fc1 = torch.nn.Linear(8704, 512)  # flatten
+        self.linear = torch.nn.Linear(512, num_classes)
 
-        # create pool blocks
-        self.pool_blocks = torch.nn.ModuleList()
-        for i in range(len(pool_padding)):
-            # adding Max Pool (drops dims by a factor of 4)
-            self.pool_blocks.append(
-                torch.nn.MaxPool1d(kernel_size=4, stride=4, padding=pool_padding[i])
-            )
+    # all conv blocks
+    def convs(self, x):
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
+        x = F.relu(self.bn4(self.conv4(x)))
+        x = F.max_pool1d(x, kernel_size=2)
+        x = F.relu(self.bn5(self.conv5(x)))
+        x = F.relu(self.bn6(self.conv6(x)))
+        x = F.relu(self.bn7(self.conv7(x)))
+        x = F.relu(self.bn8(self.conv8(x)))
+        x = F.max_pool1d(x, kernel_size=2)
+        x = F.relu(self.bn9(self.conv9(x)))
+        x = F.relu(self.bn10(self.conv10(x)))
+        x = F.relu(self.bn11(self.conv11(x)))
+        x = self.conv12(x)
+        x = x.view(x.size(0), -1)
 
-        # global pooling
-        self.global_pool = torch.nn.AdaptiveAvgPool1d(1)
-        self.linear = torch.nn.Linear(prev_channel, num_classes)
+        return x
 
-    def forward(self, inwav):
-        for i in range(len(self.conv_blocks)):
-            # apply conv layer
-            inwav = self.conv_blocks[i](inwav)
-            # apply max_pool
-            if i < len(self.pool_blocks):
-                inwav = self.pool_blocks[i](inwav)
-        # apply global pooling
-        out = self.global_pool(inwav).squeeze()
-        out = self.linear(out)
-        return out.squeeze()
+    def forward(self, x):
+        x = self.convs(x)
+        x = F.relu(self.fc1(x))
+        x = self.linear(x)
+        return x
