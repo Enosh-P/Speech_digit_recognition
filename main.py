@@ -3,18 +3,24 @@ import time
 
 import pandas as pd
 import torch
-from matplotlib import pyplot as plt
+
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from models import CNN
 from preprocessor import SpectrogramDataset
+from sklearn.metrics import accuracy_score
+
+import matplotlib.pyplot as plt
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
 
 
-def test(model, data_loader, verbose=False):
+def test(model, data_loader, verbose=False, verbose_report=False):
     """Measures the accuracy of a model on a data set."""
     # Make sure the model is in evaluation mode.
     model.eval()
     correct = 0
+    y_prediction = None
     # We do not need to maintain intermediate activations while testing.
     with torch.no_grad():
         # Loop over test data.
@@ -27,6 +33,13 @@ def test(model, data_loader, verbose=False):
             output = model(features.to(device))
             # Get the label corresponding to the highest predicted probability.
             pred = output.argmax(dim=1, keepdim=True)
+            if y_prediction is None:
+                y_prediction = pred.squeeze()
+                y_target = target
+            else:
+                y_prediction = torch.cat((y_prediction, pred.squeeze()), dim=0)
+                y_target = torch.cat((y_target, target), dim=0)
+
             # Count number of correct predictions.
             correct += pred.cpu().eq(target.view_as(pred)).sum().item()
     # Print test accuracy.
@@ -34,6 +47,16 @@ def test(model, data_loader, verbose=False):
     if verbose:
         print("----- Model Evaluation -----")
         print(f"Test accuracy: {correct} / {len(data_loader.sampler)} ({percent:.0f}%)")
+    if verbose_report:
+        y_target = y_target.cpu()
+        y_prediction = y_prediction.cpu()
+        cm_vr = confusion_matrix(y_target, y_prediction)
+        accuracy_vr = accuracy_score(y_target, y_prediction)
+        report_vr = classification_report(y_target, y_prediction)
+        print(f"The Confusion matrix Test set:\n{cm_vr}")
+        print(f"The Accuracy for Test set:\n{accuracy_vr}")
+        print(f"The Report for Test set:\n{report_vr}")
+
     return percent
 
 
@@ -111,21 +134,21 @@ def split_data(audio_df):
 
 
 def build_training_data(
-    train_df, valid_df, test_df, train_batch_size, val_batch_size, test_batch_size
+    train_df, valid_df, test_df, train_batch_size, val_batch_size, test_batch_size, n=0
 ):
     """Covert the audio samples into training data"""
 
-    train_data = SpectrogramDataset(train_df, n=15)
+    train_data = SpectrogramDataset(train_df, n=n)
     train_pr = DataLoader(
         train_data, batch_size=train_batch_size, shuffle=True, num_workers=2
     )
 
-    valid_data = SpectrogramDataset(valid_df, n=15)
+    valid_data = SpectrogramDataset(valid_df, n=n)
     valid_pr = DataLoader(
         valid_data, batch_size=val_batch_size, shuffle=True, num_workers=2
     )
 
-    test_data = SpectrogramDataset(test_df, n=15)
+    test_data = SpectrogramDataset(test_df, n=n)
     test_pr = DataLoader(
         test_data, batch_size=test_batch_size, shuffle=True, num_workers=2
     )
@@ -140,9 +163,10 @@ if __name__ == "__main__":
     print("Train Test Split!")
     train_df, valid_df, test_df = split_data(sdr_df)
 
-    print("Preparing Data!")
+    # normalize data with n=15 for Deep CNN model
+    print("Preparing Data for Deep CNN!")
     train_loader, valid_loader, test_loader = build_training_data(
-        train_df, valid_df, test_df, 32, 32, 32
+        train_df, valid_df, test_df, 32, 32, 32, n=15
     )
 
     CnnModel = CNN()
@@ -166,10 +190,16 @@ if __name__ == "__main__":
         optimizer,
         num_epochs=num_epochs,
     )
-    acc = test(CnnModel, test_loader, verbose=True)
+    acc = test(CnnModel, test_loader, verbose=True, verbose_report=True)
 
     plt.plot(accs)
     plt.title("Validation Accuracy")
     plt.xlabel("# Epochs")
     plt.ylabel("Accuracy (%)")
     plt.show()
+
+    # raw data for audio transformer
+    print("Preparing Data for Audio Transformer!")
+    at_train_loader, at_valid_loader, at_test_loader = build_training_data(
+        train_df, valid_df, test_df, 32, 32, 32
+    )
