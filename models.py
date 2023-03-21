@@ -55,7 +55,7 @@ class CNN(nn.Module):
 
         return x
 
-    def forward(self, x, use_last_layer=True):
+    def forward(self, x, use_last_layer=False):
         # Reshape the tensor to have shape [batch_size, input_channels, signal_length]
         x = x.view(x.shape[0], 1, x.shape[1])
         x = self.convs(x)

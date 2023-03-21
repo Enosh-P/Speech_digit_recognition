@@ -116,17 +116,23 @@ def train(model, criterion, train_loader, validation_loader, optimizer, num_epoc
     return accs
 
 
-def split_data(audio_df):
+def split_data(audio_df, speaker=None):
     """Split the data into a train, valid and test set"""
-    train_df = audio_df.loc[sdr_df["split"] == "TRAIN"]
-    test_df = audio_df.loc[sdr_df["split"] == "TEST"]
-    val_df = audio_df.loc[sdr_df["split"] == "DEV"]
+    if speaker and speaker in set(audio_df.speaker.values):
+        training_df = audio_df.loc[
+            (audio_df["split"] == "TRAIN") & (audio_df["speaker"] == speaker)
+        ]
+    else:
+        training_df = audio_df.loc[audio_df["split"] == "TRAIN"]
 
-    print(f"# Train Size: {len(train_df)}")
+    testing_df = audio_df.loc[audio_df["split"] == "TEST"]
+    val_df = audio_df.loc[audio_df["split"] == "DEV"]
+
+    print(f"# Train Size: {len(training_df)}")
     print(f"# Valid Size: {len(val_df)}")
-    print(f"# Test Size: {len(test_df)}")
+    print(f"# Test Size: {len(testing_df)}")
 
-    return train_df, val_df, test_df
+    return training_df, val_df, testing_df
 
 
 def build_training_data(
@@ -197,7 +203,14 @@ def start(cnn=False):
 
         print("Preparing Data for Audio Transformer!")
         at_train_loader, at_valid_loader, at_test_loader = build_training_data(
-            train_df, valid_df, test_df, 32, 32, 32, 15, flattened=False
+            speaker_train_df,
+            speaker_valid_df,
+            speaker_test_df,
+            32,
+            32,
+            32,
+            15,
+            flattened=False,
         )
 
         AudioRNNModel = RNNModel()
@@ -232,7 +245,12 @@ if __name__ == "__main__":
 
     sdr_df = pd.read_csv("SDR_metadata.tsv", sep="\t", header=0, index_col="Unnamed: 0")
 
-    print("Train Test Split!")
+    print("Train and Test Split!")
     train_df, valid_df, test_df = split_data(sdr_df)
+
+    print("Train and Test Split based on speaker!")
+    speaker_train_df, speaker_valid_df, speaker_test_df = split_data(
+        sdr_df, speaker="george"
+    )
 
     start(True)
