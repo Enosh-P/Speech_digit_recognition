@@ -33,6 +33,7 @@ class CNN(nn.Module):
         self.conv12 = nn.Conv1d(256, 256, 2)
         self.fc1 = nn.Linear(8704, 512)  # flatten
         self.linear = nn.Linear(512, num_classes)
+        self.norm = nn.Softmax(dim=1)
 
     # all conv blocks
     def convs(self, x):
@@ -54,12 +55,14 @@ class CNN(nn.Module):
 
         return x
 
-    def forward(self, x):
+    def forward(self, x, use_last_layer=True):
         # Reshape the tensor to have shape [batch_size, input_channels, signal_length]
         x = x.view(x.shape[0], 1, x.shape[1])
         x = self.convs(x)
         x = F.relu(self.fc1(x))
         x = self.linear(x)
+        if use_last_layer:
+            x = self.norm(x)
         return x
 
 
@@ -67,11 +70,14 @@ class RNNModel(nn.Module):
     def __init__(self):
         super(RNNModel, self).__init__()
         self.rnn = nn.LSTM(input_size=13, hidden_size=256, batch_first=True)
-        self.fc = nn.Linear(256, 10)
+        self.fc1 = nn.Linear(256, 128)
+        self.fc2 = nn.Linear(128, 10)
         self.norm = nn.Softmax(dim=1)
 
-    def forward(self, input):
+    def forward(self, input, use_last_layer=True):
         output, _ = self.rnn(input)
-        output = self.fc(output[:, -1])
-        output = self.norm(output)
+        output = self.fc1(output[:, -1])
+        output = self.fc2(output)
+        if use_last_layer:
+            output = self.norm(output)
         return output

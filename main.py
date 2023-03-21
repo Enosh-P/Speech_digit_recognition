@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from models import CNN, RNNModel
+from post_model_processing import t_sne_evaluation
 from preprocessor import SpectrogramDataset
 from sklearn.metrics import accuracy_score
 
@@ -185,6 +186,8 @@ def start(cnn=False):
         )
         test(CnnModel, test_loader, verbose=True, verbose_report=True)
 
+        t_sne_evaluation(CnnModel, test_loader, device)
+
         plt.plot(accs)
         plt.title("Validation Accuracy CNN")
         plt.xlabel("# Epochs")
@@ -218,6 +221,8 @@ def start(cnn=False):
         plt.ylabel("Accuracy (%)")
         plt.show()
 
+        t_sne_evaluation(AudioRNNModel, at_test_loader, device)
+
 
 if __name__ == "__main__":
 
@@ -230,4 +235,4 @@ if __name__ == "__main__":
     print("Train Test Split!")
     train_df, valid_df, test_df = split_data(sdr_df)
 
-    start()
+    start(True)
