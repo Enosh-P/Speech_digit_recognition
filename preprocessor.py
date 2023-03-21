@@ -46,7 +46,7 @@ def get_mel_spectrogram(file_path, sr=SAMPLING_RATE, num_mels=13):
     return extract_melspectrogram(audio_data, sr, num_mels)
 
 
-def downsample_spectrogram(spectrogram, n=15):
+def downsample_spectrogram(spectrogram, n=15, flattened=True):
     """
     Given a spectrogram of an arbitrary length/duration (X ∈ K x T),
     return a downsampled version of the spectrogram v ∈ K * N
@@ -60,13 +60,15 @@ def downsample_spectrogram(spectrogram, n=15):
     ]
     X_downsampled = np.array([np.mean(split, axis=1) for split in X_splits])
 
-    return X_downsampled.reshape((n * k,))
+    if flattened:
+        return X_downsampled.reshape((n * k,))
+    return X_downsampled
 
 
 class SpectrogramDataset(Dataset):
     """Building spectrogram and add its label into an array"""
 
-    def __init__(self, df, n=0):
+    def __init__(self, df, n=0, flattened=True):
         """
         :param df: dataframe for the dataset
         :param n: number of length in a split
@@ -82,7 +84,9 @@ class SpectrogramDataset(Dataset):
             file_path = get_audio_path(row)
             spectrogram = get_mel_spectrogram(file_path)
             if n:
-                spectrogram = downsample_spectrogram(spectrogram, n)
+                spectrogram = downsample_spectrogram(
+                    spectrogram, n, flattened=flattened
+                )
             self.data.append(spectrogram)
             self.labels.append(row.label)
 

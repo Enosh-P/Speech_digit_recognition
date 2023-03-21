@@ -55,68 +55,23 @@ class CNN(nn.Module):
         return x
 
     def forward(self, x):
+        # Reshape the tensor to have shape [batch_size, input_channels, signal_length]
+        x = x.view(x.shape[0], 1, x.shape[1])
         x = self.convs(x)
         x = F.relu(self.fc1(x))
         x = self.linear(x)
         return x
 
 
-class TransformerModel(nn.Module):
-    def __init__(
-        self,
-        n_classes,
-        input_shape,
-        d_model=256,
-        n_heads=4,
-        ff_dim=1024,
-        dropout_rate=0.2,
-    ):
-        super(TransformerModel, self).__init__()
+class RNNModel(nn.Module):
+    def __init__(self):
+        super(RNNModel, self).__init__()
+        self.rnn = nn.LSTM(input_size=13, hidden_size=256, batch_first=True)
+        self.fc = nn.Linear(256, 10)
+        self.norm = nn.Softmax(dim=1)
 
-        # Resize the input to a fixed shape
-        self.resize_layer = nn.Sequential(nn.Linear(input_shape[1], d_model))
-
-        # Normalize the input
-        self.normalize_layer = nn.LayerNorm(d_model)
-
-        # Add positional encoding
-        self.pos_encoding_layer = nn.TransformerEncoderLayer(
-            d_model=d_model, nhead=n_heads
-        )
-
-        # Add dropout
-        self.dropout_layer = nn.Dropout(dropout_rate)
-
-        # Transformer layers
-        self.transformer_layer1 = nn.TransformerEncoder(
-            self.pos_encoding_layer, num_layers=4
-        )
-
-        # Classification layer
-        self.classification_layer = nn.Sequential(
-            nn.Linear(d_model, ff_dim), nn.ReLU(), nn.Linear(ff_dim, n_classes)
-        )
-
-    def forward(self, x):
-        # Resize the input to a fixed shape
-        x = self.resize_layer(x)
-
-        # Normalize the input
-        x = self.normalize_layer(x)
-
-        # Add positional encoding
-        x = x.transpose(0, 1)
-        x = self.pos_encoding_layer(x)
-        x = x.transpose(0, 1)
-
-        # Add dropout
-        x = self.dropout_layer(x)
-
-        # Transformer layers
-        x = self.transformer_layer1(x)
-
-        # Classification layer
-        x = x.mean(dim=0)
-        x = self.classification_layer(x)
-
-        return x
+    def forward(self, input):
+        output, _ = self.rnn(input)
+        output = self.fc(output[:, -1])
+        output = self.norm(output)
+        return output

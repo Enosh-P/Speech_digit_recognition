@@ -6,7 +6,7 @@ import torch
 
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from models import CNN
+from models import CNN, RNNModel
 from preprocessor import SpectrogramDataset
 from sklearn.metrics import accuracy_score
 
@@ -27,8 +27,6 @@ def test(model, data_loader, verbose=False, verbose_report=False):
         for features, target in tqdm(
             data_loader, total=len(data_loader.batch_sampler), desc="Testing"
         ):
-            # Reshape the tensor to have shape [batch_size, input_channels, signal_length]
-            features = features.view(features.shape[0], 1, features.shape[1])
             # Forward pass.
             output = model(features.to(device))
             # Get the label corresponding to the highest predicted probability.
@@ -87,9 +85,6 @@ def train(model, criterion, train_loader, validation_loader, optimizer, num_epoc
             total=len(train_loader.batch_sampler),
             desc="Training",
         ):
-            # Reshape the tensor to have shape [batch_size, input_channels, signal_length]
-            features = features.view(features.shape[0], 1, features.shape[1])
-
             # Forward pass.
             output = model(features.to(device))
             loss = criterion(output.to(device), target.to(device))
@@ -134,21 +129,28 @@ def split_data(audio_df):
 
 
 def build_training_data(
-    train_df, valid_df, test_df, train_batch_size, val_batch_size, test_batch_size, n=0
+    train_df,
+    valid_df,
+    test_df,
+    train_batch_size,
+    val_batch_size,
+    test_batch_size,
+    n=0,
+    flattened=True,
 ):
     """Covert the audio samples into training data"""
 
-    train_data = SpectrogramDataset(train_df, n=n)
+    train_data = SpectrogramDataset(train_df, n=n, flattened=flattened)
     train_pr = DataLoader(
         train_data, batch_size=train_batch_size, shuffle=True, num_workers=2
     )
 
-    valid_data = SpectrogramDataset(valid_df, n=n)
+    valid_data = SpectrogramDataset(valid_df, n=n, flattened=flattened)
     valid_pr = DataLoader(
         valid_data, batch_size=val_batch_size, shuffle=True, num_workers=2
     )
 
-    test_data = SpectrogramDataset(test_df, n=n)
+    test_data = SpectrogramDataset(test_df, n=n, flattened=flattened)
     test_pr = DataLoader(
         test_data, batch_size=test_batch_size, shuffle=True, num_workers=2
     )
@@ -156,50 +158,76 @@ def build_training_data(
     return train_pr, valid_pr, test_pr
 
 
+def start(cnn=False):
+    if cnn:
+        # normalize data with n=15 for Deep CNN model
+        print("Preparing Data for Deep CNN!")
+        train_loader, valid_loader, test_loader = build_training_data(
+            train_df, valid_df, test_df, 32, 32, 32, n=15
+        )
+
+        CnnModel = CNN()
+
+        print("Num Parameters:", sum([p.numel() for p in CnnModel.parameters()]))
+        CnnModel.apply(init_weights)
+
+        criterion = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(CnnModel.parameters(), weight_decay=1e-4)
+
+        num_epochs = 100
+        accs = train(
+            CnnModel,
+            criterion,
+            train_loader,
+            valid_loader,
+            optimizer,
+            num_epochs=num_epochs,
+        )
+        test(CnnModel, test_loader, verbose=True, verbose_report=True)
+
+        plt.plot(accs)
+        plt.title("Validation Accuracy CNN")
+        plt.xlabel("# Epochs")
+        plt.ylabel("Accuracy (%)")
+        plt.show()
+    else:
+
+        print("Preparing Data for Audio Transformer!")
+        at_train_loader, at_valid_loader, at_test_loader = build_training_data(
+            train_df, valid_df, test_df, 32, 32, 32, 15, flattened=False
+        )
+
+        AudioRNNModel = RNNModel()
+        ARCriterion = torch.nn.CrossEntropyLoss()
+        AROptimizer = torch.optim.Adam(AudioRNNModel.parameters(), weight_decay=1e-4)
+
+        ARaccs = train(
+            AudioRNNModel,
+            ARCriterion,
+            at_train_loader,
+            at_valid_loader,
+            AROptimizer,
+            num_epochs=100,
+        )
+
+        test(AudioRNNModel, at_test_loader, verbose=True, verbose_report=True)
+
+        plt.plot(ARaccs)
+        plt.title("Validation Accuracy RNN")
+        plt.xlabel("# Epochs")
+        plt.ylabel("Accuracy (%)")
+        plt.show()
+
+
 if __name__ == "__main__":
+
+    random_seed = 42
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Device used: {device}")
 
     sdr_df = pd.read_csv("SDR_metadata.tsv", sep="\t", header=0, index_col="Unnamed: 0")
 
     print("Train Test Split!")
     train_df, valid_df, test_df = split_data(sdr_df)
 
-    # normalize data with n=15 for Deep CNN model
-    print("Preparing Data for Deep CNN!")
-    train_loader, valid_loader, test_loader = build_training_data(
-        train_df, valid_df, test_df, 32, 32, 32, n=15
-    )
-
-    CnnModel = CNN()
-
-    random_seed = 42
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print(f"Device used: {device}")
-
-    print("Num Parameters:", sum([p.numel() for p in CnnModel.parameters()]))
-    CnnModel.apply(init_weights)
-
-    criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(CnnModel.parameters(), weight_decay=1e-4)
-
-    num_epochs = 100
-    accs = train(
-        CnnModel,
-        criterion,
-        train_loader,
-        valid_loader,
-        optimizer,
-        num_epochs=num_epochs,
-    )
-    acc = test(CnnModel, test_loader, verbose=True, verbose_report=True)
-
-    plt.plot(accs)
-    plt.title("Validation Accuracy")
-    plt.xlabel("# Epochs")
-    plt.ylabel("Accuracy (%)")
-    plt.show()
-
-    # raw data for audio transformer
-    print("Preparing Data for Audio Transformer!")
-    at_train_loader, at_valid_loader, at_test_loader = build_training_data(
-        train_df, valid_df, test_df, 32, 32, 32
-    )
+    start()
